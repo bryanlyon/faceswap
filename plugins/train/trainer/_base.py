@@ -173,8 +173,8 @@ class TrainerBase():
                        self.model.iterations % snapshot_interval == 0)
         loss = dict()
         for side, batcher in self.batchers.items():
-            if self.pingpong.active and side != self.pingpong.side:
-                continue
+            # if self.pingpong.active and side != self.pingpong.side:
+            #     continue
             loss[side] = batcher.train_one_batch(do_preview)
             if not do_preview and not do_timelapse:
                 continue

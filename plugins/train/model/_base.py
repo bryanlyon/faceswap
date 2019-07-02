@@ -48,6 +48,7 @@ class ModelBase():
                  encoder_dim=None,
                  trainer="original",
                  pingpong=False,
+                 pretrain=False,
                  memory_saving_gradients=False,
                  predict=False):
         logger.debug("Initializing ModelBase (%s): (model_dir: '%s', gpus: %s, configfile: %s, "

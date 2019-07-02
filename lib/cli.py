@@ -991,6 +991,11 @@ class TrainArgs(FaceSwapArgs):
                                       "2 to 4 times longer, with about a 30%%-50%% reduction in "
                                       "VRAM useage. NB: Preview won't show until both sides have "
                                       "been trained once."})
+        argument_list.append({"opts": ("-pt", "--pretrain"),
+                              "action": "store_true",
+                              "dest": "pretrain",
+                              "default": False,
+                              "help": "Pretrain Test mode"})
         argument_list.append({"opts": ("-msg", "--memory-saving-gradients"),
                               "action": "store_true",
                               "dest": "memory_saving_gradients",

@@ -168,6 +168,7 @@ class Train():
             alignments_paths=self.alignments_paths,
             preview_scale=self.args.preview_scale,
             pingpong=self.args.pingpong,
+            pretrain=self.args.pretrain,
             memory_saving_gradients=self.args.memory_saving_gradients,
             predict=False)
         logger.debug("Loaded Model")
@@ -226,7 +227,8 @@ class Train():
                 logger.trace("Save Iteration: (iteration: %s", iteration)
                 if self.args.pingpong:
                     model.save_models()
-                    trainer.pingpong.switch()
+                    if not self.args.pretrain:
+                        trainer.pingpong.switch()
                 else:
                     model.save_models()
             elif self.save_now:
