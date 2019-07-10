@@ -19,7 +19,6 @@ from lib.faces_detect import DetectedFace
 from lib.multithreading import SpawnProcess
 from lib.queue_manager import queue_manager, QueueEmpty
 from lib.utils import cv2_read_img
-from lib.vgg_face import VGGFace
 from plugins.plugin_loader import PluginLoader
 
 from . import cli
@@ -57,7 +56,12 @@ class Sort():
 
         # Load VGG Face if sorting by face
         if self.args.sort_method.lower() == "face":
-            self.vgg_face = VGGFace(backend=self.args.backend)
+            if self.args.detection_method == "vgg_face":
+                from lib.vgg_face import VGGFace
+                self.vgg_face = VGGFace(backend=self.args.backend)
+            elif self.args.detection_method == "vgg_face_keras":
+                from lib.vgg_face_keras import VGGFace
+                self.vgg_face = VGGFace(backend=self.args.backend)
 
         # If logging is enabled, prepare container
         if self.args.log_changes:
@@ -191,76 +195,6 @@ class Sort():
                     "minutes...")
         indices = self.vgg_face.sorted_similarity(preds, method="ward")
         img_list = images[indices]
-        return img_list
-
-    def sort_face_cnn(self):
-        """ Sort by CNN similarity """
-        self.launch_aligner()
-        input_dir = self.args.input_dir
-
-        logger.info("Sorting by face-cnn similarity...")
-        img_list = []
-        for img in tqdm(self.find_images(input_dir),
-                        desc="Loading",
-                        file=sys.stdout):
-            landmarks = self.get_landmarks(img)
-            img_list.append([img, np.array(landmarks)
-                             if landmarks
-                             else np.zeros((68, 2))])
-
-        queue_manager.terminate_queues()
-        img_list_len = len(img_list)
-        for i in tqdm(range(0, img_list_len - 1),
-                      desc="Sorting",
-                      file=sys.stdout):
-            min_score = float("inf")
-            j_min_score = i + 1
-            for j in range(i + 1, len(img_list)):
-                fl1 = img_list[i][1]
-                fl2 = img_list[j][1]
-                score = np.sum(np.absolute((fl2 - fl1).flatten()))
-
-                if score < min_score:
-                    min_score = score
-                    j_min_score = j
-            (img_list[i + 1],
-             img_list[j_min_score]) = (img_list[j_min_score],
-                                       img_list[i + 1])
-        return img_list
-
-    def sort_face_cnn_dissim(self):
-        """ Sort by CNN dissimilarity """
-        self.launch_aligner()
-        input_dir = self.args.input_dir
-
-        logger.info("Sorting by face-cnn dissimilarity...")
-
-        img_list = []
-        for img in tqdm(self.find_images(input_dir),
-                        desc="Loading",
-                        file=sys.stdout):
-            landmarks = self.get_landmarks(img)
-            img_list.append([img, np.array(landmarks)
-                             if landmarks
-                             else np.zeros((68, 2)), 0])
-
-        img_list_len = len(img_list)
-        for i in tqdm(range(0, img_list_len - 1),
-                      desc="Sorting",
-                      file=sys.stdout):
-            score_total = 0
-            for j in range(i + 1, len(img_list)):
-                if i == j:
-                    continue
-                fl1 = img_list[i][1]
-                fl2 = img_list[j][1]
-                score_total += np.sum(np.absolute((fl2 - fl1).flatten()))
-
-            img_list[i][2] = score_total
-
-        logger.info("Sorting...")
-        img_list = sorted(img_list, key=operator.itemgetter(2), reverse=True)
-
         return img_list
 
     def sort_face_yaw(self):
@@ -477,41 +411,50 @@ class Sort():
         process_file = self.set_process_file_method(self.args.log_changes,
                                                     self.args.keep_original)
 
+        if os.path.dirname(str(img_list[0])) == output_dir:
+            logger.info("Input and Output folders match, using temp folder")
+            original_output_dir = output_dir
+            output_dir = os.join(output_dir,"temp")
+            temp_dir_used = True
+        else:
+            temp_dir_used = False
+
         # Make sure output directory exists
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
         description = (
-            "Copying and Renaming" if self.args.keep_original
-            else "Moving and Renaming"
+            "Copying files" if self.args.keep_original
+            else "Moving files"
         )
 
-        for i in tqdm(range(0, len(img_list)),
-                      desc=description,
-                      leave=False,
-                      file=sys.stdout):
-            src = img_list[i] if isinstance(img_list[i], str) else img_list[i][0]
-            src_basename = os.path.basename(src)
-
-            dst = os.path.join(output_dir, '{:05d}_{}'.format(i, src_basename))
+        for image_number, image_file in enumerate(tqdm(img_list, desc=description,
+                leave=False, file=sys.stdout)):
+            image_basename = os.path.basename(image_file)
+            image_extension = os.path.splitext(image_file)[1]
+            dst = os.path.join(output_dir, '{:05d}{}'.format(image_number,image_extension))
             try:
-                process_file(src, dst, self.changes)
+                if self.args.keep_original:
+                    logger.trace("Copying file %s to %s".format((image_file,dst)))
+                    copyfile(image_file, dst)
+                else:
+                    logger.trace("Moving file %s to %s".format((image_file,dst)))
+                    os.rename(image_file, dst)
+                if self.args.log_changes:
+                    self.changes[image_file] = dst
             except FileNotFoundError as err:
                 logger.error(err)
-                logger.error('fail to rename %s', src)
+                logger.error('Failed to rename %s', image_file)
 
-        for i in tqdm(range(0, len(img_list)),
-                      desc=description,
-                      file=sys.stdout):
-            renaming = self.set_renaming_method(self.args.log_changes)
-            fname = img_list[i] if isinstance(img_list[i], str) else img_list[i][0]
-            src, dst = renaming(fname, output_dir, i, self.changes)
-
-            try:
-                os.rename(src, dst)
-            except FileNotFoundError as err:
-                logger.error(err)
-                logger.error('fail to rename %s', format(src))
+        if temp_dir_used: # Moving files back from temp folder
+                logger.info("Moving files from temp folder to %s".format(original_output_dir))
+                for image_number in range(len(img_list)):
+                    os.rename(os.join(output_dir, '{:05d}{}'.format(image_number,image_extension)),
+                              os.join(original_output_dir, '{:05d}{}'.format(image_number,image_extension)))
+                if not os.listdir(output_dir):
+                    os.rmdir(output_dir)
+                else:
+                    raise Exception("Temp folder %s is not empty, cannot remove automatically".format(output_dir))
 
         if self.args.log_changes:
             self.write_to_log(self.changes)
@@ -526,17 +469,18 @@ class Sort():
         # First create new directories to avoid checking
         # for directory existence in the moving loop
         logger.info("Creating group directories.")
-        for i in range(len(bins)):
-            directory = os.path.join(output_dir, str(i))
+        for bin_number in range(len(bins)):
+            directory = os.path.join(output_dir, str(bin_number))
             if not os.path.exists(directory):
                 os.makedirs(directory)
 
         description = (
-            "Copying into Groups" if self.args.keep_original
-            else "Moving into Groups"
+            "Copying into folders" if self.args.keep_original
+            else "Moving into folders"
         )
 
         logger.info("Total groups found: %s", len(bins))
+
         for i in tqdm(range(len(bins)), desc=description, file=sys.stdout):
             for j in range(len(bins[i])):
                 src = bins[i][j]

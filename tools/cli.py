@@ -456,18 +456,14 @@ class SortArgs(FaceSwapArgs):
         argument_list.append({"opts": ('-s', '--sort-by'),
                               "action": Radio,
                               "type": str,
-                              "choices": ("blur", "face", "face-cnn", "face-cnn-dissim",
-                                          "face-yaw", "hist", "hist-dissim"),
+                              "choices": ("blur", "face", "face-yaw", "hist", "hist-dissim"),
                               "dest": 'sort_method',
                               "default": "hist",
                               "help": "R|Sort by method. Choose how images are sorted. "
                                       "\nL|'blur': Sort faces by blurriness."
-                                      "\nL|'face': Use VGG Face to sort by face similarity. This "
-                                      "uses a pairwise clustering algorithm to check the "
-                                      "distances between 4096 features on every face in your set "
-                                      "and order them appropriately. WARNING: On very large "
-                                      "datasets it is possible to run out of memory performing "
-                                      "this calculation."
+                                      "\nL|'face': Use a neural network to find any faces and compare them."
+                                      "WARNING: On very large datasets it is possible to run out of"
+                                      "memory performing this calculation."
                                       "\nL|'face-cnn': Sort faces by their landmarks. You can "
                                       "adjust the threshold with the '-t' (--ref_threshold) "
                                       "option."
@@ -480,6 +476,24 @@ class SortArgs(FaceSwapArgs):
                                       "\nL|'hist-dissim': Like 'hist' but sorts by "
                                       "dissimilarity."
                                       "\nDefault: hist"})
+
+        argument_list.append({"opts": ('-d', '--detector'),
+                              "action": Radio,
+                              "type": str,
+                              "choices": ("vgg_face", "vgg_face_keras", "vgg_face2"),
+                              "dest": 'detection_method',
+                              "default": "vgg_face",
+                              "help": "R|Method to use for face detection. "
+                                      "\nL|'vgg_face': Use VGG Face to sort by face similarity. This "
+                                      "uses a pairwise clustering algorithm to check the "
+                                      "distances between 4096 features on every face in your set "
+                                      "and order them appropriately."
+                                      "\n'vgg_face_keras': Same as vgg_face but run in Keras "
+                                      "may have different results"
+                                      "\n'vgg_face2': Use the 2nd generation vgg_face model "
+                                      "uses 2048 features instead of 4096 so may be faster "
+                                      "but may be less accurate"
+                                      "\nDefault: vgg_face"})
 
         argument_list.append({"opts": ('-g', '--group-by'),
                               "action": Radio,
