@@ -1,6 +1,7 @@
 #!/usr/bin python3
-""" VGG_Face inference using OpenCV-DNN
-Model from: https://www.robots.ox.ac.uk/~vgg/software/vgg_face/
+""" VGG_Face2 inference
+Model exported from: https://github.com/WeidiXie/Keras-VGGFace2-ResNet50
+which is based on: https://www.robots.ox.ac.uk/~vgg/software/vgg_face/
 
 Licensed under Creative Commons Attribution License.
 https://creativecommons.org/licenses/by-nc/4.0/
@@ -13,23 +14,23 @@ import os
 import cv2
 import numpy as np
 from fastcluster import linkage
-
 from lib.utils import GetModel
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class VGGFace():
+class VGGFace2():
     """ VGG Face feature extraction.
         Input images should be in BGR Order """
 
-    def __init__(self, backend="CPU"):
-        logger.debug("Initializing %s: (backend: %s)", self.__class__.__name__, backend)
-        git_model_id = 7
-        model_filename = ["vgg_face_v1.caffemodel", "vgg_face_v1.prototxt"]
+    def __init__(self, backend="GPU"):
+        logger.debug("Initializing %s:", self.__class__.__name__,)
+        backend = backend.upper()
+        git_model_id = 10
+        model_filename = ["vggface2_resnet50_v1.h5"]
         self.input_size = 224
-        # Average image provided in http://www.robots.ox.ac.uk/~vgg/software/vgg_face/
-        self.average_img = [129.1863, 104.7624, 93.5940]
+        # Average image provided in https://github.com/ox-vgg/vgg_face2
+        self.average_img = np.array([91.4953, 103.8827, 131.0912])
 
         self.model = self.get_model(git_model_id, model_filename, backend)
         logger.debug("Initialized %s", self.__class__.__name__)
@@ -40,32 +41,24 @@ class VGGFace():
         root_path = os.path.abspath(os.path.dirname(sys.argv[0]))
         cache_path = os.path.join(root_path, "plugins", "extract", ".cache")
         model = GetModel(model_filename, cache_path, git_model_id).model_path
-        model = cv2.dnn.readNetFromCaffe(model[1], model[0])  # pylint: disable=no-member
-        model.setPreferableTarget(self.get_backend(backend))
-        return model
-
-    @staticmethod
-    def get_backend(backend):
-        """ Return the cv2 DNN backend """
-        if backend == "OPENCL":
-            logger.info("Using OpenCL backend. If the process runs, you can safely ignore any of "
-                        "the failure messages.")
-        retval = getattr(cv2.dnn, "DNN_TARGET_{}".format(backend))  # pylint: disable=no-member
-        return retval
+        if backend == "CPU":
+            if os.environ.get("KERAS_BACKEND", "") == "plaidml.keras.backend":
+                logger.info("Switching to tensorflow backend.")
+                os.environ["KERAS_BACKEND"] = "tensorflow"
+            else:
+                import keras
+                with keras.backend.tf.device("/cpu:0"):
+                    return keras.models.load_model(model)
+        import keras
+        return keras.models.load_model(model)
 
     def predict(self, face):
         """ Return encodings for given image from vgg_face """
         if face.shape[0] != self.input_size:
             face = self.resize_face(face)
-        blob = cv2.dnn.blobFromImage(face,  # pylint: disable=no-member
-                                     1.0,
-                                     (self.input_size, self.input_size),
-                                     self.average_img,
-                                     False,
-                                     False)
-        self.model.setInput(blob)
-        preds = self.model.forward("fc7")[0, :]
-        return preds
+        face = np.expand_dims(face - self.average_img, axis=0)
+        preds = self.model.predict(face)
+        return preds[0, :]
 
     def resize_face(self, face):
         """ Resize incoming face to model_input_size """
